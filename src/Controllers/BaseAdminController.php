@@ -216,10 +216,23 @@ abstract class BaseAdminController extends Controller
     }
 
     /**
-     * Verifica RBAC. Default no-op: l'app che ha un RBAC deve sovrascriverlo
-     * (es. il trait HasRbac dello starter fornisce authorize()).
+     * Verifica RBAC. Il kit NON implementa un RBAC: l'app che dichiara un
+     * permesso (via optionsPermission() o chiamando $this->authorize()) DEVE
+     * sovrascrivere questo metodo — es. il trait HasRbac dello starter fornisce
+     * authorize() e, essendo un metodo di trait, ha precedenza su questo.
+     *
+     * Default FAIL-CLOSED: se un permesso viene richiesto ma nessun RBAC è
+     * cablato, l'accesso è negato (mai fail-open silenzioso). Meglio un errore
+     * esplicito di configurazione che un bypass invisibile.
+     *
+     * @throws \RuntimeException se un permesso è richiesto senza RBAC configurato
      */
     protected function authorize(string $permission): void
     {
+        throw new \RuntimeException(sprintf(
+            'Permesso "%s" richiesto ma nessun RBAC è configurato: sovrascrivi '
+            . 'authorize() nel controller base dell\'app (es. trait HasRbac).',
+            $permission
+        ));
     }
 }
