@@ -1,0 +1,225 @@
+<?php
+
+namespace AdminKit\Controllers;
+
+use AdminKit\Libraries\SmartyRenderer;
+use AdminKit\Traits\HasFilters;
+use AdminKit\Traits\HasForm;
+use AdminKit\Traits\HasPagination;
+use AdminKit\Traits\HasSorting;
+use CodeIgniter\Controller;
+use CodeIgniter\Exceptions\PageNotFoundException;
+use CodeIgniter\HTTP\RequestInterface;
+use CodeIgniter\HTTP\ResponseInterface;
+use Psr\Log\LoggerInterface;
+use ReflectionMethod;
+
+/**
+ * Controller base del kit admin. Fornisce: rendering Smarty (con precedenza
+ * tema-app → partial del kit), iniezione asset deduplicata, list builder e form
+ * builder (via trait), e il dispatcher degli option provider (cascate AJAX).
+ *
+ * L'app estende questa classe nel proprio AdminController aggiungendo auth,
+ * menu, RBAC e branding tramite l'hook prepareView().
+ */
+abstract class BaseAdminController extends Controller
+{
+    use HasPagination;
+    use HasFilters;
+    use HasSorting;
+    use HasForm;
+
+    protected SmartyRenderer $smarty;
+
+    private array $cssLinks      = [];
+    private array $cssInline     = [];
+    private array $headScripts   = [];
+    private array $footerScripts = [];
+
+    public function initController(RequestInterface $request, ResponseInterface $response, LoggerInterface $logger): void
+    {
+        parent::initController($request, $response, $logger);
+
+        $cfg = config('AdminKit');
+
+        $this->smarty = service('smarty');
+        // Precedenza: tema dell'app (override) → viste del kit (partial di base)
+        $this->smarty->setTemplateDir([
+            APPPATH . 'Views/' . rtrim($cfg->themeDir, '/') . '/',
+            __DIR__ . '/../Views/',
+        ]);
+        $this->smarty->getSmarty()->compile_id = 'admin';
+    }
+
+    // -------------------------------------------------------------------------
+    // Asset injection (deduplicati)
+    // -------------------------------------------------------------------------
+
+    protected function addCss(string $url): static
+    {
+        if (! in_array($url, $this->cssLinks, true)) {
+            $this->cssLinks[] = $url;
+        }
+        return $this;
+    }
+
+    protected function addInlineCss(string $code): static
+    {
+        $this->cssInline[] = $code;
+        return $this;
+    }
+
+    protected function addHeadJs(string $url): static
+    {
+        foreach ($this->headScripts as $item) {
+            if ($item['type'] === 'url' && $item['content'] === $url) {
+                return $this;
+            }
+        }
+        $this->headScripts[] = ['type' => 'url', 'content' => $url];
+        return $this;
+    }
+
+    protected function addHeadInlineJs(string $code): static
+    {
+        $this->headScripts[] = ['type' => 'inline', 'content' => $code];
+        return $this;
+    }
+
+    protected function addJs(string $url): static
+    {
+        foreach ($this->footerScripts as $item) {
+            if ($item['type'] === 'url' && $item['content'] === $url) {
+                return $this;
+            }
+        }
+        $this->footerScripts[] = ['type' => 'url', 'content' => $url];
+        return $this;
+    }
+
+    protected function addInlineJs(string $code): static
+    {
+        $this->footerScripts[] = ['type' => 'inline', 'content' => $code];
+        return $this;
+    }
+
+    // -------------------------------------------------------------------------
+    // Rendering
+    // -------------------------------------------------------------------------
+
+    protected function assign(string $key, mixed $value): static
+    {
+        $this->smarty->assign($key, $value);
+        return $this;
+    }
+
+    /**
+     * Legge il body della request come JSON (con workaround Apache/PHP-FPM che
+     * consegna il body URL-encoded). Utile per gli endpoint JSON del pannello.
+     */
+    protected function getJsonBody(): array
+    {
+        $raw = $this->request->getBody();
+
+        if ($raw === null || $raw === '') {
+            return [];
+        }
+
+        if (str_starts_with($raw, '%')) {
+            $raw = rtrim(urldecode($raw), '=');
+        }
+
+        return json_decode($raw, true) ?? [];
+    }
+
+    /**
+     * Hook per i dati condivisi del layout (menu, avatar, branding, ...).
+     * L'app lo sovrascrive; qui è un no-op.
+     */
+    protected function prepareView(): void
+    {
+    }
+
+    protected function render(string $view, bool $saveData = false): string
+    {
+        // dati specifici dell'app (menu/avatar/__APP__/...)
+        $this->prepareView();
+
+        $this->smarty->assign('flashSuccess', session('success'));
+        $this->smarty->assign('flashError',   session('error'));
+        $this->smarty->assign('flashWarning', session('warning'));
+        $this->smarty->assign('currentPath', '/' . ltrim(uri_string(), '/'));
+
+        // CSRF globale JS — primo script del footer
+        $csrfScript = 'window.__CSRF__ = ' . json_encode([
+            'name'  => csrf_token(),
+            'value' => csrf_hash(),
+        ]) . ';';
+
+        $this->smarty->assign('cssLinks',    $this->cssLinks);
+        $this->smarty->assign('cssInline',   $this->cssInline);
+        $this->smarty->assign('headScripts', $this->headScripts);
+        $this->smarty->assign('footerScripts', array_merge(
+            [['type' => 'inline', 'content' => $csrfScript]],
+            $this->footerScripts
+        ));
+
+        return $this->smarty->render($view, saveData: $saveData);
+    }
+
+    // -------------------------------------------------------------------------
+    // Option provider (cascate AJAX dei campi remoti)
+    // -------------------------------------------------------------------------
+
+    public static function controllerSlug(string $class): string
+    {
+        $base = substr($class, (int) strrpos($class, '\\') + 1);
+
+        return strtolower((string) preg_replace('/(?<!^)[A-Z]/', '-$0', $base));
+    }
+
+    protected function formOptionsBase(): string
+    {
+        return base_url('admin/' . static::controllerSlug(static::class) . '/options');
+    }
+
+    /**
+     * Dispatcher generico degli option provider. Rotta auto-registrata:
+     * GET admin/<slug>/options/(:segment). Chiama options{Provider}() (protected).
+     */
+    public function formOptions(string $provider): ResponseInterface
+    {
+        if (! preg_match('/^[a-z0-9-]+$/', $provider)) {
+            throw PageNotFoundException::forPageNotFound();
+        }
+
+        $method = 'options' . str_replace(' ', '', ucwords(str_replace('-', ' ', $provider)));
+
+        if (! method_exists($this, $method) || ! (new ReflectionMethod($this, $method))->isProtected()) {
+            throw PageNotFoundException::forPageNotFound();
+        }
+
+        $permission = $this->optionsPermission($provider);
+        if ($permission !== null) {
+            $this->authorize($permission);
+        }
+
+        return $this->response->setJSON($this->{$method}());
+    }
+
+    /**
+     * Permesso RBAC per un provider (null = solo auth). Da sovrascrivere.
+     */
+    protected function optionsPermission(string $provider): ?string
+    {
+        return null;
+    }
+
+    /**
+     * Verifica RBAC. Default no-op: l'app che ha un RBAC deve sovrascriverlo
+     * (es. il trait HasRbac dello starter fornisce authorize()).
+     */
+    protected function authorize(string $permission): void
+    {
+    }
+}
