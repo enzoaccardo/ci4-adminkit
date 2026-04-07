@@ -40,15 +40,29 @@ abstract class BaseAdminController extends Controller
     {
         parent::initController($request, $response, $logger);
 
+        $this->smarty = service('smarty');
+        $this->smarty->setTemplateDir($this->templateDirs());
+        $this->smarty->getSmarty()->compile_id = 'admin';
+    }
+
+    /**
+     * Catena di risoluzione dei template Smarty, in ordine di precedenza.
+     * Default: tema dell'app (override) → viste del kit (partial di base).
+     *
+     * Estendibile: un pacchetto-tema (es. ci4-adminkit-adminlte4) sovrascrive
+     * questo metodo per inserire le proprie viste di layout tra il tema dell'app
+     * e i partial del kit — senza duplicare initController().
+     *
+     * @return list<string>
+     */
+    protected function templateDirs(): array
+    {
         $cfg = config('AdminKit');
 
-        $this->smarty = service('smarty');
-        // Precedenza: tema dell'app (override) → viste del kit (partial di base)
-        $this->smarty->setTemplateDir([
+        return [
             APPPATH . 'Views/' . rtrim($cfg->themeDir, '/') . '/',
             __DIR__ . '/../Views/',
-        ]);
-        $this->smarty->getSmarty()->compile_id = 'admin';
+        ];
     }
 
     // -------------------------------------------------------------------------
