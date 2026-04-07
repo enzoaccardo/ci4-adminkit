@@ -10,6 +10,10 @@ class SmartyRenderer implements RendererInterface
     protected Smarty $smarty;
     protected array  $data = [];
 
+    /** Log dei render per il collector della debug toolbar (solo in development). */
+    protected bool  $debug    = false;
+    protected array $debugLog = [];
+
     public function __construct()
     {
         $this->smarty = new Smarty();
@@ -21,7 +25,8 @@ class SmartyRenderer implements RendererInterface
 
         $this->smarty->caching     = false;
         $this->smarty->escape_html = true;
-        $this->smarty->debugging   = (ENVIRONMENT === 'development');
+        $this->debug               = (ENVIRONMENT === 'development');
+        $this->smarty->debugging   = false; // il debug Smarty è esposto via il collector CI4
 
         $this->registerCIHelpers();
     }
@@ -77,7 +82,10 @@ class SmartyRenderer implements RendererInterface
     public function render(string $view, ?array $options = null, bool $saveData = false): string
     {
         $this->smarty->assign($this->data);
+
+        $start  = $this->debug ? microtime(true) : 0.0;
         $output = $this->smarty->fetch($view . '.tpl');
+        $this->logRender($view . '.tpl', $start);
 
         if (! $saveData) {
             $this->resetData();
@@ -89,13 +97,67 @@ class SmartyRenderer implements RendererInterface
     public function renderString(string $view, ?array $options = null, bool $saveData = false): string
     {
         $this->smarty->assign($this->data);
+
+        $start  = $this->debug ? microtime(true) : 0.0;
         $output = $this->smarty->fetch('string:' . $view);
+        $this->logRender('string:…', $start);
 
         if (! $saveData) {
             $this->resetData();
         }
 
         return $output;
+    }
+
+    /**
+     * Registra un render per il collector della debug toolbar (solo in dev).
+     */
+    private function logRender(string $file, float $start): void
+    {
+        if (! $this->debug) {
+            return;
+        }
+
+        $end = microtime(true);
+        $this->debugLog[] = [
+            'template' => $file,
+            'path'     => $this->resolveTemplatePath($file),
+            'start'    => $start,
+            'duration' => $end - $start,
+            'vars'     => array_keys($this->data),
+        ];
+    }
+
+    /**
+     * Risolve il .tpl nella catena templateDir (primo esistente = quello usato),
+     * relativizzato a ROOTPATH per leggibilità nella toolbar.
+     */
+    private function resolveTemplatePath(string $file): string
+    {
+        if (str_starts_with($file, 'string:')) {
+            return '(string)';
+        }
+
+        foreach ((array) $this->smarty->getTemplateDir() as $dir) {
+            $full = rtrim((string) $dir, '/\\') . '/' . $file;
+            if (is_file($full)) {
+                return defined('ROOTPATH') && str_starts_with($full, ROOTPATH)
+                    ? substr($full, strlen(ROOTPATH))
+                    : $full;
+            }
+        }
+
+        return $file . ' (non risolto)';
+    }
+
+    /**
+     * Log dei render della richiesta corrente (per AdminKit\Debug\SmartyCollector).
+     *
+     * @return list<array{template:string,path:string,start:float,duration:float,vars:list<string>}>
+     */
+    public function getDebugLog(): array
+    {
+        return $this->debugLog;
     }
 
     public function setData(array $data = [], ?string $context = null): static
