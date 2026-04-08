@@ -125,6 +125,7 @@ class SmartyRenderer implements RendererInterface
             'start'    => $start,
             'duration' => $end - $start,
             'vars'     => array_keys($this->data),
+            'data'     => $this->data, // snapshot per il tab "Vars" della toolbar
         ];
     }
 

@@ -14,10 +14,11 @@ class SmartyCollector extends BaseCollector
 {
     protected $hasTimeline   = true;
     protected $hasTabContent = true;
+    protected $hasVarData    = true;
     protected $hasLabel      = true;
     protected $title         = 'Smarty';
 
-    /** @return list<array{template:string,path:string,start:float,duration:float,vars:list<string>}> */
+    /** @return list<array{template:string,path:string,start:float,duration:float,vars:list<string>,data:array}> */
     private function log(): array
     {
         try {
@@ -49,13 +50,29 @@ class SmartyCollector extends BaseCollector
                 . '<td>' . esc($r['template']) . '</td>'
                 . '<td><small>' . esc($r['path']) . '</small></td>'
                 . '<td style="text-align:right">' . number_format($r['duration'] * 1000, 2) . ' ms</td>'
-                . '<td><small>' . esc(implode(', ', $r['vars'])) . '</small></td>'
+                . '<td style="text-align:right">' . count($r['vars']) . '</td>'
                 . '</tr>';
         }
 
-        return '<table><thead><tr>'
-            . '<th>Template</th><th>Path risolto</th><th>Tempo</th><th>Variabili assegnate</th>'
+        return '<p>Le variabili assegnate sono esplorabili nel tab <strong>Vars</strong> (sezioni «Smarty: …»).</p>'
+            . '<table><thead><tr>'
+            . '<th>Template</th><th>Path risolto</th><th>Tempo</th><th>N. variabili</th>'
             . '</tr></thead><tbody>' . $rows . '</tbody></table>';
+    }
+
+    /**
+     * Espone le variabili assegnate a ciascun template nel tab "Vars" della
+     * toolbar (una sezione per render, coppie nome → valore esplorabili).
+     */
+    public function getVarData(): array
+    {
+        $out = [];
+        foreach ($this->log() as $i => $r) {
+            $label = 'Smarty: ' . $r['template'] . ($i > 0 ? ' #' . ($i + 1) : '');
+            $out[$label] = $r['data'] ?? [];
+        }
+
+        return $out;
     }
 
     public function getBadgeValue(): int
