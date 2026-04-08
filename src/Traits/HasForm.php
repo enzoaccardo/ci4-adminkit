@@ -39,6 +39,15 @@ trait HasForm
             $this->addJs(base_url('themes/admin/default/assets/form-ajax.js'));
         }
 
+        // "Crea nuovo" in modale (campi con 'createNew'): serve modal-form.js
+        // (+ ajax/logic per agganciare il form iniettato).
+        if ($this->formHasCreateNew($form)) {
+            $base = base_url('themes/admin/default/assets');
+            $this->addJs($base . '/form-ajax.js');
+            $this->addJs($base . '/form-logic.js');
+            $this->addJs($base . '/modal-form.js');
+        }
+
         $this->assign('form', $form);
         // Il partial errors.tpl mostra il riepilogo errori in cima al form
         $this->assign('sessionErrors', session('errors'));
@@ -50,7 +59,8 @@ trait HasForm
      * Un solo code-path nel controller serve entrambe le modalità.
      *
      * @param bool  $ok   Esito del salvataggio
-     * @param array $opts redirect, message, errors (per campo), withInput
+     * @param array $opts redirect, message, errors (per campo), withInput,
+     *                    record ({value,label} per l'iniezione nel select padre in modale)
      * @return \CodeIgniter\HTTP\ResponseInterface|\CodeIgniter\HTTP\RedirectResponse
      */
     protected function formResult(bool $ok, array $opts = [])
@@ -67,6 +77,9 @@ trait HasForm
             ];
             if ($ok && $redirect !== null) {
                 $payload['redirect'] = $redirect;
+            }
+            if ($ok && isset($opts['record'])) {
+                $payload['record'] = $opts['record']; // {value,label} → select padre
             }
             if (! $ok) {
                 $payload['errors'] = $errors;
@@ -164,37 +177,75 @@ trait HasForm
      */
     private function registerWidgets(array $form): void
     {
-        $inits = [];
+        $assets = $this->collectWidgetAssets($form);
+
+        foreach ($assets['css'] as $css) {
+            $this->addCss($css);
+        }
+        foreach ($assets['js'] as $js) {
+            $this->addJs($js);
+        }
+
+        if ($assets['init'] !== []) {
+            $this->addInlineJs(
+                "document.addEventListener('DOMContentLoaded', function () {\n"
+                . implode("\n", $assets['init'])
+                . "\n});"
+            );
+        }
+    }
+
+    /**
+     * Raccoglie css/js/init dei widget del form SENZA toccare gli array del
+     * controller. Usato da registerWidgets (render pagina) e dal fragment in
+     * modale (BaseAdminController::formFragment), dove l'init va eseguito dopo
+     * l'iniezione — quindi senza il wrapper DOMContentLoaded.
+     *
+     * @return array{css:list<string>,js:list<string>,init:list<string>}
+     */
+    protected function collectWidgetAssets(array $form): array
+    {
+        $css = $js = $init = [];
 
         foreach ($form['sections'] as $section) {
             foreach ($section['fields'] as $field) {
                 if (empty($field['widget'])) {
                     continue;
                 }
-
                 $def = FieldWidgets::definition($field['widget']);
                 if ($def === null) {
                     continue;
                 }
-
-                foreach ($def['css'] as $css) {
-                    $this->addCss($css);
+                foreach ($def['css'] as $c) {
+                    if (! in_array($c, $css, true)) {
+                        $css[] = $c;
+                    }
                 }
-                foreach ($def['js'] as $js) {
-                    $this->addJs($js);
+                foreach ($def['js'] as $j) {
+                    if (! in_array($j, $js, true)) {
+                        $js[] = $j;
+                    }
                 }
                 if (isset($def['init'])) {
-                    $inits[] = ($def['init'])($field);
+                    $init[] = ($def['init'])($field);
                 }
             }
         }
 
-        if ($inits !== []) {
-            $this->addInlineJs(
-                "document.addEventListener('DOMContentLoaded', function () {\n"
-                . implode("\n", $inits)
-                . "\n});"
-            );
+        return ['css' => $css, 'js' => $js, 'init' => $init];
+    }
+
+    /** Vero se un campo del form dichiara 'createNew'. */
+    private function formHasCreateNew(array $form): bool
+    {
+        foreach ($form['sections'] as $section) {
+            foreach ($section['fields'] as $field) {
+                if (! empty($field['createNew'])) {
+                    return true;
+                }
+            }
         }
+
+        return false;
     }
 }

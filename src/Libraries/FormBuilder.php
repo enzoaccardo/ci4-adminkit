@@ -194,6 +194,8 @@ class FormBuilder
             // da HasForm/FieldWidgets, agganciati all'id univoco del campo.
             'widget'        => $cfg['widget'] ?? null,
             'widgetOptions' => $cfg['widgetOptions'] ?? [],
+            // "Crea nuovo" in modale (solo select/multiselect); default null.
+            'createNew'     => null,
         ];
 
         if (in_array($type, ['checkbox', 'switch'], true)) {
@@ -203,6 +205,17 @@ class FormBuilder
         if (in_array($type, ['select', 'multiselect', 'radio'], true)) {
             $field['empty']   = $cfg['empty'] ?? null;
             $field['options'] = $this->buildOptions($cfg, $value, $type === 'multiselect');
+        }
+
+        // "Crea nuovo" in modale: bottone accanto al select che apre il form di
+        // un'altra entità e ne inietta il record creato. Vedi modal-form.js.
+        if (isset($cfg['createNew']) && in_array($type, ['select', 'multiselect'], true)) {
+            $cn = $cfg['createNew'];
+            $field['createNew'] = [
+                'url'   => base_url(ltrim((string) ($cn['url'] ?? ''), '/')),
+                'label' => $cn['label'] ?? 'Crea nuovo',
+                'title' => $cn['title'] ?? ($cn['label'] ?? 'Nuovo'),
+            ];
         }
 
         return $field;

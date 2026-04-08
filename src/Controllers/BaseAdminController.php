@@ -182,6 +182,39 @@ abstract class BaseAdminController extends Controller
     }
 
     // -------------------------------------------------------------------------
+    // Fragment del form per la modale "crea nuovo"
+    // -------------------------------------------------------------------------
+
+    /**
+     * Renderizza SOLO il form (senza layout) e ne restituisce gli asset, come
+     * JSON {html, css[], js[], init}, per l'iniezione in una modale (modal-form.js).
+     * Riusa la stessa formConfig() del create dell'entità: nessuna duplicazione.
+     *
+     * L'azione del form (create) deve rispondere via formResult(true, ['record'=>...])
+     * così la modale può iniettare il nuovo record nel select del form padre.
+     */
+    protected function formFragment(array $config, ?object $entity = null, ?\CodeIgniter\Model $model = null): ResponseInterface
+    {
+        $form = (new \AdminKit\Libraries\FormBuilder())->build($config, $entity, $model, $this->formOptionsBase());
+
+        $this->assign('form', $form);
+        $this->assign('sessionErrors', null);
+        $this->assign('flashSuccess', null);
+        $this->assign('flashError', null);
+        $this->assign('flashWarning', null);
+
+        $html   = $this->smarty->render('layout/_partials/form');
+        $assets = $this->collectWidgetAssets($form);
+
+        return $this->response->setJSON([
+            'html' => $html,
+            'css'  => $assets['css'],
+            'js'   => $assets['js'],
+            'init' => implode("\n", $assets['init']),
+        ]);
+    }
+
+    // -------------------------------------------------------------------------
     // Option provider (cascate AJAX dei campi remoti)
     // -------------------------------------------------------------------------
 

@@ -176,13 +176,22 @@
         applyToggles();
     }
 
-    function initAll() {
-        document.querySelectorAll('form[data-logic]').forEach(initForm);
+    // Bind idempotente su un sotto-albero (default: document). Ri-agganciabile
+    // sui form iniettati dinamicamente (es. modale) via AdminKit.bindLogic(root).
+    function bind(root) {
+        (root || document).querySelectorAll('form[data-logic]').forEach(function (f) {
+            if (f.__akLogicBound) return;
+            f.__akLogicBound = true;
+            initForm(f);
+        });
     }
 
+    window.AdminKit = window.AdminKit || {};
+    window.AdminKit.bindLogic = bind;
+
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initAll);
+        document.addEventListener('DOMContentLoaded', function () { bind(document); });
     } else {
-        initAll();
+        bind(document);
     }
 })();
