@@ -44,20 +44,63 @@ class SmartyCollector extends BaseCollector
             return '<p>Nessun template Smarty renderizzato in questa richiesta.</p>';
         }
 
-        $rows = '';
+        $html = '';
         foreach ($log as $r) {
-            $rows .= '<tr>'
-                . '<td>' . esc($r['template']) . '</td>'
-                . '<td><small>' . esc($r['path']) . '</small></td>'
-                . '<td style="text-align:right">' . number_format($r['duration'] * 1000, 2) . ' ms</td>'
-                . '<td style="text-align:right">' . count($r['vars']) . '</td>'
-                . '</tr>';
+            $html .= '<h4 style="margin:.75rem 0 .25rem">' . esc($r['template'])
+                . ' <small style="font-weight:normal;color:#888">'
+                . esc($r['path']) . ' · ' . number_format($r['duration'] * 1000, 2) . ' ms · '
+                . count($r['vars']) . ' variabili</small></h4>';
+
+            if ($r['data'] === []) {
+                $html .= '<p><em>Nessuna variabile assegnata.</em></p>';
+                continue;
+            }
+
+            $rows = '';
+            foreach ($r['data'] as $name => $value) {
+                $rows .= '<tr>'
+                    . '<td style="vertical-align:top;white-space:nowrap"><strong>' . esc((string) $name) . '</strong></td>'
+                    . '<td>' . $this->formatValue($value) . '</td>'
+                    . '</tr>';
+            }
+
+            $html .= '<table><thead><tr><th>Variabile</th><th>Valore</th></tr></thead><tbody>'
+                . $rows . '</tbody></table>';
         }
 
-        return '<p>Le variabili assegnate sono esplorabili nel tab <strong>Vars</strong> (sezioni «Smarty: …»).</p>'
-            . '<table><thead><tr>'
-            . '<th>Template</th><th>Path risolto</th><th>Tempo</th><th>N. variabili</th>'
-            . '</tr></thead><tbody>' . $rows . '</tbody></table>';
+        return $html;
+    }
+
+    /**
+     * Formatta un valore per il tab: scalari inline, array/oggetti in un blocco
+     * pre troncato (esplorabile senza appesantire la toolbar).
+     */
+    private function formatValue(mixed $value): string
+    {
+        if ($value === null) {
+            return '<em style="color:#999">null</em>';
+        }
+        if (is_bool($value)) {
+            return '<span style="color:#0a7">' . ($value ? 'true' : 'false') . '</span>';
+        }
+        if (is_scalar($value)) {
+            $s = (string) $value;
+
+            return esc(mb_strlen($s) > 300 ? mb_substr($s, 0, 300) . ' …' : $s);
+        }
+
+        $type = is_array($value)
+            ? 'array(' . count($value) . ')'
+            : 'object(' . (is_object($value) ? $value::class : gettype($value)) . ')';
+
+        $dump = @print_r($value, true);
+        if (strlen($dump) > 2000) {
+            $dump = substr($dump, 0, 2000) . "\n… (troncato)";
+        }
+
+        return '<span style="color:#888">' . esc($type) . '</span>'
+            . '<pre style="white-space:pre-wrap;max-height:220px;overflow:auto;margin:.25rem 0;font-size:11px">'
+            . esc($dump) . '</pre>';
     }
 
     /**
