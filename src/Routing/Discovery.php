@@ -58,9 +58,15 @@ class Discovery
 
             $class::$method($routes);
 
-            if ($withOptions && method_exists($class, 'formOptions')) {
+            if ($withOptions) {
                 $slug = BaseAdminController::controllerSlug($class);
-                $routes->get("{$slug}/options/(:segment)", [$class, 'formOptions']);
+                if (method_exists($class, 'formOptions')) {
+                    $routes->get("{$slug}/options/(:segment)", [$class, 'formOptions']);
+                }
+                // "Crea nuovo" in modale: GET (fragment) + POST (store).
+                if (method_exists($class, 'formCreate')) {
+                    $routes->match(['get', 'post'], "{$slug}/create/(:segment)", [$class, 'formCreate']);
+                }
             }
         }
     }

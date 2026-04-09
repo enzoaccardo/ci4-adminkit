@@ -262,6 +262,65 @@ abstract class BaseAdminController extends Controller
         return null;
     }
 
+    // -------------------------------------------------------------------------
+    // "Crea nuovo" in modale — auto-rotta (mirror dell'option provider)
+    // -------------------------------------------------------------------------
+
+    protected function formCreateBase(): string
+    {
+        return base_url('admin/' . static::controllerSlug(static::class) . '/create');
+    }
+
+    /**
+     * Dispatcher del "crea nuovo" in modale. Rotta auto-registrata:
+     * (GET|POST) admin/<slug>/create/(:segment).
+     *   GET  → renderizza il fragment del form di createConfig{Provider}() (protected);
+     *   POST → salva via createStore{Provider}() (protected), che risponde con
+     *          formResult(true, ['record'=>['value','label']]).
+     */
+    public function formCreate(string $provider): ResponseInterface
+    {
+        if (! preg_match('/^[a-z0-9-]+$/', $provider)) {
+            throw PageNotFoundException::forPageNotFound();
+        }
+
+        $studly       = str_replace(' ', '', ucwords(str_replace('-', ' ', $provider)));
+        $configMethod = 'createConfig' . $studly;
+        $storeMethod  = 'createStore' . $studly;
+
+        if (! method_exists($this, $configMethod) || ! (new ReflectionMethod($this, $configMethod))->isProtected()) {
+            throw PageNotFoundException::forPageNotFound();
+        }
+
+        $permission = $this->createPermission($provider);
+        if ($permission !== null) {
+            $this->authorize($permission);
+        }
+
+        if (strtoupper($this->request->getMethod()) === 'POST') {
+            if (! method_exists($this, $storeMethod) || ! (new ReflectionMethod($this, $storeMethod))->isProtected()) {
+                throw PageNotFoundException::forPageNotFound();
+            }
+
+            return $this->{$storeMethod}();
+        }
+
+        // GET → fragment del form (stessa formConfig del create dell'entità)
+        $config           = $this->{$configMethod}();
+        $config['ajax']   = true;
+        $config['action'] = $this->formCreateBase() . '/' . $provider;
+
+        return $this->formFragment($config);
+    }
+
+    /**
+     * Permesso RBAC per il "crea nuovo" di un provider (null = solo auth).
+     */
+    protected function createPermission(string $provider): ?string
+    {
+        return null;
+    }
+
     /**
      * Verifica RBAC. Il kit NON implementa un RBAC: l'app che dichiara un
      * permesso (via optionsPermission() o chiamando $this->authorize()) DEVE

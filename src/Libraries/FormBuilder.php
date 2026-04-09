@@ -211,8 +211,19 @@ class FormBuilder
         // un'altra entità e ne inietta il record creato. Vedi modal-form.js.
         if (isset($cfg['createNew']) && in_array($type, ['select', 'multiselect'], true)) {
             $cn = $cfg['createNew'];
+
+            if (isset($cn['url'])) {
+                // URL esplicito
+                $url = base_url(ltrim((string) $cn['url'], '/'));
+            } elseif (! empty($cn['provider']) && $this->optionsBase !== null) {
+                // Auto-rotta: admin/<slug>/create/<provider> (derivata da optionsBase)
+                $url = preg_replace('#/options$#', '/create', $this->optionsBase) . '/' . $cn['provider'];
+            } else {
+                $url = '#';
+            }
+
             $field['createNew'] = [
-                'url'   => base_url(ltrim((string) ($cn['url'] ?? ''), '/')),
+                'url'   => $url,
                 'label' => $cn['label'] ?? 'Crea nuovo',
                 'title' => $cn['title'] ?? ($cn['label'] ?? 'Nuovo'),
             ];
