@@ -322,23 +322,53 @@ abstract class BaseAdminController extends Controller
     }
 
     /**
-     * Verifica RBAC. Il kit NON implementa un RBAC: l'app che dichiara un
-     * permesso (via optionsPermission() o chiamando $this->authorize()) DEVE
-     * sovrascrivere questo metodo — es. il trait HasRbac dello starter fornisce
-     * authorize() e, essendo un metodo di trait, ha precedenza su questo.
+     * Servizio RBAC scoperto a runtime (soft-discovery): se un pacchetto/app
+     * registra service('rbac') che implementa AdminKit\Contracts\Rbac, viene
+     * usato; altrimenti null (nessun RBAC installato).
+     */
+    private function rbac(): ?\AdminKit\Contracts\Rbac
+    {
+        try {
+            $svc = service('rbac');
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return $svc instanceof \AdminKit\Contracts\Rbac ? $svc : null;
+    }
+
+    /**
+     * Vero se l'utente ha il permesso. Delega al service('rbac') scoperto; se
+     * nessun RBAC è installato ritorna false (fail-closed). Usata dagli endpoint
+     * JSON che vogliono decidere senza lanciare eccezioni.
+     */
+    protected function can(string $permission): bool
+    {
+        $rbac = $this->rbac();
+
+        return $rbac !== null && ($rbac->isSuperAdmin() || $rbac->can($permission));
+    }
+
+    /**
+     * Verifica RBAC. Delega al service('rbac') scoperto (soft-discovery). Se
+     * nessun RBAC è installato → FAIL-CLOSED: eccezione esplicita (mai un bypass
+     * silenzioso). Un'app con RBAC proprio può comunque sovrascrivere authorize()
+     * (es. via trait) e la sua versione ha precedenza.
      *
-     * Default FAIL-CLOSED: se un permesso viene richiesto ma nessun RBAC è
-     * cablato, l'accesso è negato (mai fail-open silenzioso). Meglio un errore
-     * esplicito di configurazione che un bypass invisibile.
-     *
-     * @throws \RuntimeException se un permesso è richiesto senza RBAC configurato
+     * @throws \RuntimeException se un permesso è richiesto senza RBAC installato
      */
     protected function authorize(string $permission): void
     {
-        throw new \RuntimeException(sprintf(
-            'Permesso "%s" richiesto ma nessun RBAC è configurato: sovrascrivi '
-            . 'authorize() nel controller base dell\'app (es. trait HasRbac).',
-            $permission
-        ));
+        $rbac = $this->rbac();
+
+        if ($rbac === null) {
+            throw new \RuntimeException(sprintf(
+                'Permesso "%s" richiesto ma nessun RBAC è installato (service(\'rbac\') '
+                . 'assente o non implementa AdminKit\\Contracts\\Rbac).',
+                $permission
+            ));
+        }
+
+        $rbac->authorize($permission);
     }
 }
