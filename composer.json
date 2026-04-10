@@ -1,8 +1,14 @@
 {
-    "name": "vaccardo/ci4-adminkit",
+    "name": "enzoaccardo/ci4-adminkit",
     "description": "Admin kit per CodeIgniter 4: Smarty + list builder (filtri/ordinamento/paginazione) + form builder (widget, interazioni, AJAX)",
     "type": "library",
     "license": "MIT",
+    "authors": [
+        {
+            "name": "Vincenzo Accardo",
+            "email": "vincenzo.accardo@w3style.it"
+        }
+    ],
     "require": {
         "php": "^8.2",
         "codeigniter4/framework": "^4.7",

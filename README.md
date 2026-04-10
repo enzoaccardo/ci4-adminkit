@@ -20,7 +20,7 @@ Restano all'app: layout/tema + branding, autenticazione/RBAC, menu, migrazioni.
 "repositories": [ { "type": "path", "url": "../ci4-adminkit" } ]
 ```
 ```bash
-composer require vaccardo/ci4-adminkit:@dev
+composer require enzoaccardo/ci4-adminkit:@dev
 php spark adminkit:publish        # copia gli asset JS/CSS in public/ (--config per la config)
 ```
 
