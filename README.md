@@ -1,33 +1,70 @@
 # ci4-adminkit
 
-Kit per pannelli di amministrazione **CodeIgniter 4**, estratto dallo starter e riutilizzabile via Composer (come `codeigniter4/tasks`). Fornisce:
+Base per costruire pannelli di amministrazione con CodeIgniter 4.
 
-- **Smarty** come template engine (`AdminKit\Libraries\SmartyRenderer`, servizio `smarty`)
-- **List builder**: trait `HasPagination` / `HasFilters` / `HasSorting` + partial `thead` / `filter_input` / `pagination` (liste con filtri, ordinamento, paginazione e whitelist colonne anti-SQLi)
-- **Form builder** dichiarativo: `FormBuilder` + `FieldWidgets` + trait `HasForm` + partial `form.tpl` / `fields/*`
-  - tipi campo per famiglia, inferenza `required`/`maxlength` dai `validationRules` del model
-  - widget JS: **Tom Select**, **flatpickr**, **FilePond**, cron-builder, password-strength
-  - **interazioni tra campi** (show/hide, enable, required condizionale, cascata AJAX)
-  - submit **AJAX** opt-in (`formResult()`), validazione condizionale server (`validateConditional()`)
-  - **option provider**: cascate AJAX senza boilerplate (rotta auto `admin/<slug>/options/<provider>`)
-- **BaseAdminController**: rendering Smarty (precedenza tema-app → partial del kit), iniezione asset deduplicata, dispatcher option provider
+È nato mettendo insieme le cose che riscrivevo ogni volta in un gestionale: il
+rendering delle viste, le liste con filtri e ordinamento, i form, la gestione dei
+permessi. Qui dentro c'è la parte che non dipende dal dominio dell'applicazione,
+così su un progetto nuovo parti da qualcosa invece che dal foglio bianco.
 
-Restano all'app: layout/tema + branding, autenticazione/RBAC, menu, migrazioni.
+## In due parole
 
-## Installazione (dev, path repository)
-```jsonc
-// composer.json dell'app
-"repositories": [ { "type": "path", "url": "../ci4-adminkit" } ]
+Il pezzo centrale è `BaseAdminController`. Un controller che lo estende ha già:
+
+* le viste renderizzate con Smarty 5, con gli helper di CI4 già registrati
+  (`base_url`, `csrf_field`, `sort_url`, il menu, ecc.);
+* un *list builder* fatto di tre trait (paginazione, filtri, ordinamento) che
+  lavorano su una whitelist di colonne, quindi niente parametri che finiscono
+  dritti nella query;
+* un *form builder* dichiarativo: descrivi i campi in un array e vengono fuori
+  validazione lato client, widget (Tom Select, flatpickr, FilePond, cron), le
+  interazioni tra campi (mostra/nascondi, obbligatori condizionati, cascate via
+  AJAX), il submit in AJAX e la creazione al volo in una modale.
+
+Ci sono poi un `BaseModel` e una `BaseMigration` con i campi di audit
+(`created_by` / `updated_by` / `deleted_by` e soft delete), un helper per
+registrare le rotte partendo dai controller (`Routing\Discovery`) e un contratto
+RBAC opzionale: se in giro c'è un `service('rbac')` che lo implementa, il
+controllo dei permessi si attiva da solo, altrimenti il kit resta chiuso di
+default sulle azioni protette.
+
+Quello che il kit *non* fa, di proposito: non impone un tema (il markup usa le
+classi di Bootstrap ma il CSS lo porti tu), non decide come autentichi gli
+utenti, non crea il menu. Per il tema pronto c'è `ci4-adminkit-adminlte4`.
+
+## Installazione
+
 ```
-```bash
-composer require enzoaccardo/ci4-adminkit:@dev
-php spark adminkit:publish        # copia gli asset JS/CSS in public/ (--config per la config)
+composer require enzoaccardo/ci4-adminkit
+php spark adminkit:publish
 ```
 
-## Uso
-Il controller base dell'app estende `AdminKit\Controllers\BaseAdminController` e aggiunge auth/menu/RBAC (via hook `prepareView()`). Poi list builder e form builder sono disponibili nei controller. Vedi lo starter `customci4` come consumer di riferimento.
+Il `publish` copia gli asset dei widget in `public/`. Richiede PHP 8.2+,
+CodeIgniter 4.7 e Smarty 5 (tirato dentro come dipendenza).
 
-## Convenzioni richieste all'app
-- `window.__CSRF__` è iniettato dal kit; l'app può aggiungere `window.__APP__`.
-- Un RBAC opzionale: sovrascrivere `authorize()` / `optionsPermission()` nel controller base dell'app.
-- Config pubblicabile `AdminKit` (asset base, dir tema).
+## Un form, tanto per capirsi
+
+```php
+protected function formConfig(): array
+{
+    return [
+        'action'   => base_url('admin/utenti/salva'),
+        'sections' => [[
+            'title'  => 'Anagrafica',
+            'fields' => [
+                'nome'  => ['type' => 'text',  'label' => 'Nome', 'required' => true],
+                'email' => ['type' => 'email', 'label' => 'Email'],
+                'ruolo' => ['type' => 'select', 'label' => 'Ruolo', 'widget' => 'tomselect',
+                            'options' => $this->ruoli()],
+            ],
+        ]],
+    ];
+}
+```
+
+Nel controller poi `buildForm($this->formConfig())` e nella view
+`{include file='layout/_partials/form.tpl'}`. Il resto lo fa il builder.
+
+## Licenza
+
+MIT. Vedi il file [LICENSE](LICENSE).
